@@ -1,31 +1,24 @@
 const express = require('express')
 const axios = require('axios')
-const app = express()
 const redis = require('redis')
-const redisClient = redis.createClient() // default port 6379
+const { promisify } = require('util')
+const client = redis.createClient()
+const getAsync = promisify(client.get).bind(client)
+const app = express()
 
 const BASE_URL = 'https://api.github.com/users'
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
   const username = req.query.username || 'devahoy'
-  redisClient.get(username, async (error, data) => {
-    if (error) {
-      res.json({
-        message: 'Something went wrong!',
-        error
-      })
-    }
-    if (data) {
-      return res.json(JSON.parse(data))
-    }
-    const url = `${BASE_URL}/${username}`
-    const response = await axios.get(url)
-    // set แบบมี expire ด้วย (เก็บไว้ 60วินาที)
-    redisClient.setex(username, 60, JSON.stringify(response.data))
-    res.json(response.data)
-  })
+  const cached = await getAsync(username)
+  if (cached) {
+    return res.json(JSON.parse(cached))
+  }
+  const url = `${BASE_URL}/${username}`
+  const response = await axios.get(url)
+  client.setex(username, 60, JSON.stringify(response.data))
+  res.json(response.data)
 })
 
-
 app.listen(9000, () => {
-  console.log('App is running on port 9000')
+  console.log('app running')
 })
